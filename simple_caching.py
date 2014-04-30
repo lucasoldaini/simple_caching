@@ -1,9 +1,8 @@
-import codecs
 import json
 import os
 from functools import wraps
 import gzip
-import syss
+import sys
 from string import punctuation
  
 def simple_caching(cachedir=None,
