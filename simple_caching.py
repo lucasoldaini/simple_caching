@@ -4,11 +4,25 @@ from functools import wraps
 import gzip
 import sys
 from string import punctuation
+import codecs
+
+
+class _DumpAdapter(object):
+    def __init__(self, func, accepted_args):
+        self.func = func
+        self.accepted_args = accepted_args
+
+    def __call__(self, **kwargs):
+        keyword_arguments = {k: kwargs[k] for k in kwargs
+                             if k in self.accepted_args}
+        return self.func(**keyword_arguments)
 
 
 def simple_caching(cachedir=None,
                    cache_comment=None,
-                   autodetect=False):
+                   autodetect=False,
+                   force_refresh=False,
+                   cache_format='gzip'):
     """ Caching decorator for dictionary/tuples.
         Caches gzipped json in specified cache folder
 
@@ -28,6 +42,12 @@ def simple_caching(cachedir=None,
         auto detects args and kwargs that could be used
         as cache_comment.
 
+        force_refresh (default=False)
+        rebuilts cache if set to True
+
+        cache_format (default=gzip)
+        it could either be gzip or json
+
         The kwargs can be set either (a) at decoration time
         or (b) when the decorated method is called:
 
@@ -45,7 +65,7 @@ def simple_caching(cachedir=None,
         foo('baz', cachedir='/path/to/cache')
 
         A combination of both is also fine, of course.
-        kwargs provided at decoration time have precedence, though.
+        kwargs provided at call time have precedence, though.
     """
     # Without the use of this decorator factory,
     # the name of the method would have been 'wrapper'
@@ -58,8 +78,10 @@ def simple_caching(cachedir=None,
         # of scope for method_wrapper, thus local variables
         # need to be instantiated.
         local_cachedir = cachedir
-        local_cache_comment = cache_comment
+        local_cache_comment = (cache_comment or '')
         local_autodetect = autodetect
+        local_force_refresh = force_refresh
+        local_cache_format = cache_format
 
         @wraps(method)
         def method_wrapper(*args, **kwargs):
@@ -67,33 +89,26 @@ def simple_caching(cachedir=None,
             # looks for cachedir folder in self instance
             # if not found, it looks for it in keyword
             # arguments.
-            if not local_cachedir:
-                try:
-                    cachedir = args[0].cachedir
-                except AttributeError:
-                        cachedir = kwargs.pop('cachedir', None)
-            else:
-                cachedir = local_cachedir
+            try:
+                cachedir = args[0].cachedir
+            except AttributeError:
+                    cachedir = kwargs.pop('cachedir', local_cachedir)
 
             # if no cachedir is specified, then it simply returns
             # the original method and does nothing
             if not cachedir:
                 return method(*args, **kwargs)
 
-            if not local_cache_comment:
-                cache_comment = kwargs.pop('cache_comment', '')
-            else:
-                cache_comment = local_cachedir
+            cache_comment = kwargs.pop('cache_comment', local_cache_comment)
+            autodetect = kwargs.pop('autodetect', local_autodetect)
 
-            if not local_autodetect:
-                autodetect = kwargs.pop('autodetect', False)
-            else:
-                autodetect = local_autodetect
             if autodetect:
                 cache_comment += "_".join([a for a in args if type(a) is str])
                 cache_comment += "_".join([kwargs[kwa] for kwa in kwargs
                                            if type(kwa) in
                                            (float, int, str, unicode)])
+
+            force_refresh = kwargs.pop('force_refresh', local_force_refresh)
 
             if not os.path.exists(cachedir):
                 cachedir = os.path.join(os.getcwd(), cachedir)
@@ -102,12 +117,28 @@ def simple_caching(cachedir=None,
                                           "a valid dir.").format(cachedir)
                     sys.exit(1)
 
+            cache_format = kwargs.pop('cache_format', local_cache_format)
+            if cache_format == 'json':
+                dump_func = _DumpAdapter(codecs.open,
+                                         ['filename', 'mode', 'encoding'])
+                ext = 'json'
+            elif cache_format == 'gzip':
+                dump_func = _DumpAdapter(gzip.open,
+                                         ['filename', 'mode'])
+                ext = 'gz'
+            else:
+                print >> sys.stderr, ("[cache error] {0} is not a valid " +
+                                      "cache format. Use json or gzip." +
+                                      "").format(cache_format)
+                sys.exit(1)
+
             # the ...and...or... makes sure that there is an underscore
             # between cache file name and cache comment if cache_comment
             # exists.
-            cachename = '%s%s.cache.gz' % (method.__name__,
+            cachename = '%s%s.cache.%s' % (method.__name__,
                                            (cache_comment and
-                                            '_%s' % cache_comment) or '')
+                                            '_%s' % cache_comment) or '',
+                                           ext)
             # removes prefix/suffix punctuation from method name
             # (e.g. __call__ will become call)
             while cachename[0] in punctuation:
@@ -117,14 +148,17 @@ def simple_caching(cachedir=None,
             cachepath = os.path.join(cachedir, cachename)
 
             # loads creates cache
-            if os.path.exists(cachepath):
-                with gzip.open(cachepath, mode='r') as cachefile:
+            if os.path.exists(cachepath) and not force_refresh:
+                with dump_func(filename=cachepath,
+                               mode='r', encoding='utf-8') as cachefile:
                     return json.loads(cachefile.read())
             else:
                 print '[cache] generating %s' % cachepath
                 tocache = method(*args, **kwargs)
-                with gzip.open(cachepath, mode='w') as cachefile:
+                with dump_func(filename=cachepath, mode='w',
+                               encoding='utf-8') as cachefile:
                     json.dump(tocache, cachefile)
                 return tocache
         return method_wrapper
     return caching_decorator
+
