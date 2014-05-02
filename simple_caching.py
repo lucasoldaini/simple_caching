@@ -1,3 +1,5 @@
+"""Caching decorator for dictionary/tuples."""
+
 import json
 import os
 from functools import wraps
@@ -24,42 +26,43 @@ def simple_caching(cachedir=None,
                    force_refresh=False,
                    cache_format='gzip'):
     """ Caching decorator for dictionary/tuples.
-        Caches gzipped json in specified cache folder
 
-        Accepts the following kwargs:
+    Caches gzipped json in specified cache folder
 
-        cachedir (default=None)
-        Location of the folder where to cache. cachedir
-        doesn't need to be configured if simple_caching
-        is caching a method of a class with cachedir attribute.
+    Accepts the following kwargs:
 
-        cache_comment (default=None)
-        A comment to add to the name of the cache.
-        If no comment is provided, the name of the cache
-        if the name of the method that is being cachedonly.
+    cachedir (default=None)
+    Location of the folder where to cache. cachedir
+    doesn't need to be configured if simple_caching
+    is caching a method of a class with cachedir attribute.
 
-        autodetect (default=False)
-        auto detects args and kwargs that could be used
-        as cache_comment.
+    cache_comment (default=None)
+    A comment to add to the name of the cache.
+    If no comment is provided, the name of the cache
+    if the name of the method that is being cachedonly.
 
-        force_refresh (default=False)
-        rebuilts cache if set to True
+    autodetect (default=False)
+    auto detects args and kwargs that could be used
+    as cache_comment.
 
-        cache_format (default=gzip)
-        it could either be gzip or json
+    force_refresh (default=False)
+    rebuilts cache if set to True
 
-        The kwargs can be set either (a) at decoration time
-        or (b) when the decorated method is called:
+    cache_format (default=gzip)
+    it could either be gzip or json
 
-        example (a):
-        @simple_caching(cachedir='/path/to/cache')
-        def foo(s):
-            ...
+    The kwargs can be set either (a) at decoration time
+    or (b) when the decorated method is called:
+
+    example (a):
+    @simple_caching(cachedir='/path/to/cache')
+    def foo(s):
+    ...
 
         example (b):
         @simple_caching()
         def foo(s):
-            ...
+    ...
         ...
 
         foo('baz', cachedir='/path/to/cache')
@@ -161,4 +164,3 @@ def simple_caching(cachedir=None,
                 return tocache
         return method_wrapper
     return caching_decorator
-
