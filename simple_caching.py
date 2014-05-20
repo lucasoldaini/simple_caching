@@ -7,9 +7,13 @@ import gzip
 import sys
 from string import punctuation
 import codecs
+from hashlib import md5
 
 
 class _DumpAdapter(object):
+    """ Flexible interlace to blindly use codecs module or
+        gzip module
+    """
     def __init__(self, func, accepted_args):
         self.func = func
         self.accepted_args = accepted_args
@@ -21,8 +25,8 @@ class _DumpAdapter(object):
 
 
 def simple_caching(cachedir=None,
+                   mode=None,
                    cache_comment=None,
-                   autodetect=False,
                    force_refresh=False,
                    cache_format='gzip'):
     """ Caching decorator for dictionary/tuples.
@@ -30,6 +34,13 @@ def simple_caching(cachedir=None,
     Caches gzipped json in specified cache folder
 
     Accepts the following kwargs:
+
+    mode (default='hash')
+    accepted modes:
+        (1) method-name: the name of the decorated method
+            is used as name for the cache.
+        (2) hash: a hash of the parameters is used as
+            name of the cache
 
     cachedir (default=None)
     Location of the folder where to cache. cachedir
@@ -40,10 +51,6 @@ def simple_caching(cachedir=None,
     A comment to add to the name of the cache.
     If no comment is provided, the name of the cache
     if the name of the method that is being cachedonly.
-
-    autodetect (default=False)
-    auto detects args and kwargs that could be used
-    as cache_comment.
 
     force_refresh (default=False)
     rebuilts cache if set to True
@@ -82,9 +89,18 @@ def simple_caching(cachedir=None,
         # need to be instantiated.
         local_cachedir = cachedir
         local_cache_comment = (cache_comment or '')
-        local_autodetect = autodetect
         local_force_refresh = force_refresh
         local_cache_format = cache_format
+        local_mode = mode
+
+        if local_mode is None:
+            local_mode = 'hash'
+
+        if (local_mode not in ('hash', 'method-name')):
+            print >> sys.stderr, ("[cache error] '{0}' is not " +
+                                  "a valid caching mode; use 'method-name' " +
+                                  "or 'hash'.").format(local_mode)
+            sys.exit(1)
 
         @wraps(method)
         def method_wrapper(*args, **kwargs):
@@ -102,16 +118,13 @@ def simple_caching(cachedir=None,
             if not cachedir:
                 return method(*args, **kwargs)
 
+            # checks if the global parameters are overwritten by
+            # values @ call time or if some of the missing parameters
+            # have been provided at call time
             cache_comment = kwargs.pop('cache_comment', local_cache_comment)
-            autodetect = kwargs.pop('autodetect', local_autodetect)
-
-            if autodetect:
-                cache_comment += "_".join([a for a in args if type(a) is str])
-                cache_comment += "_".join([kwargs[kwa] for kwa in kwargs
-                                           if type(kwa) in
-                                           (float, int, str, unicode)])
-
             force_refresh = kwargs.pop('force_refresh', local_force_refresh)
+            mode = kwargs.pop('mode', ((local_mode is not None) and
+                                       local_mode) or 'hash')
 
             if not os.path.exists(cachedir):
                 cachedir = os.path.join(os.getcwd(), cachedir)
@@ -135,10 +148,16 @@ def simple_caching(cachedir=None,
                                       "").format(cache_format)
                 sys.exit(1)
 
+            if mode == 'method-name':
+                name = method.__name__
+            if mode == 'hash':
+                to_hash = json.dumps({'args': args, 'kwargs': kwargs})
+                name = md5(to_hash).hexdigest()
+
             # the ...and...or... makes sure that there is an underscore
             # between cache file name and cache comment if cache_comment
             # exists.
-            cachename = '%s%s.cache.%s' % (method.__name__,
+            cachename = '%s%s.cache.%s' % (name,
                                            (cache_comment and
                                             '_%s' % cache_comment) or '',
                                            ext)
