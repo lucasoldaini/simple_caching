@@ -9,6 +9,8 @@ from string import punctuation
 import codecs
 from hashlib import md5
 
+_OK_JSON = set((dict, list, str, int, float))
+
 
 class _DumpAdapter(object):
     """ Flexible interlace to blindly use codecs module or
@@ -151,7 +153,11 @@ def simple_caching(cachedir=None,
             if mode == 'method-name':
                 name = method.__name__
             if mode == 'hash':
-                to_hash = json.dumps({'args': args, 'kwargs': kwargs})
+                to_hash = json.dumps({'args': [a for a in args
+                                               if a in _OK_JSON],
+                                     'kwargs': {k: v for k, v in kwargs.items()
+                                                if v in _OK_JSON}
+                                      })
                 name = md5(to_hash).hexdigest()
 
             # the ...and...or... makes sure that there is an underscore
