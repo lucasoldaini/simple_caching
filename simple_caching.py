@@ -185,7 +185,12 @@ def simple_caching(cachedir=None,
                 tocache = method(*args, **kwargs)
                 with dump_func(filename=cachepath, mode='w',
                                encoding='utf-8') as cachefile:
-                    json.dump(tocache, cachefile)
+                    try:
+                        json.dump(tocache, cachefile)
+                    except TypeError:
+                        cachefile.close()
+                        os.remove(cachepath)
+                        raise
                 return tocache
         return method_wrapper
     return caching_decorator
